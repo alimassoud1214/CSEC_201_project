@@ -1,9 +1,10 @@
 # CSEC 201 - Remote File Management Protocol (RFMP)
 
 ## Group Members
-- Ali Massoud
-- Team Member 2
-- Team Member 3
+- Ali
+- Muhammad Adel
+- Eyosias
+- Sergei
 
 ## Project Files
 - crypto_util.py: Caesar cipher and RSA key encryption helper routines
