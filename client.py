@@ -68,12 +68,6 @@ def setup_connection(sock):
         server_public_key = response[4:-1]
 
         print("Server public key:", server_public_key)
-
-        # ENCRYPTION WILL BE ADDED HERE WITH PERSON 3
-        # The server currently expects:
-        # (EC,Algorithm,EncryptedSessionKey,ClientPublicKey)
-        # Person 3's crypto_util.py will be integrated
-        # here.
         print("Secure encryption setup still needs to be integrated.")
 
         return True
