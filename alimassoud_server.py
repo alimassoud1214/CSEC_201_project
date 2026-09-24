@@ -11,6 +11,7 @@ SERVER_PUB_KEY = "SERVER_RSA_PUB_123"
 SERVER_PRIV_KEY = "SERVER_RSA_PRIV_123"
 
 def handle_client(clientsocket, addr):
+    #Worker function to handle individual client requests concurrently.
     print("New client connected from:", addr)
     
     session_key = ""
