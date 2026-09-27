@@ -6,6 +6,9 @@ int main() {
     WSADATA wsa;
     SOCKET sock;
     struct sockaddr_in server;
+    char packet[200];
+    char reply[5000];
+    int n;
 
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         printf("Winslock failed to start\n");
@@ -33,9 +36,30 @@ int main() {
 
     printf("Connected to RFMP server\n");
 
+    strcpy(packet, "(SS,RFMP, v1.0,0)");
+    send(sock, packet, strlen(packet), 0);
+
+    n = recv(sock, reply, sizeof(reply) -1, 0);
+    if (n <= 0) {
+    printf("server connection closed\n");
     closesocket(sock);
     WSACleanup();
-    printf("Client closed\n");
-    return 0;
+    return 1;
+    }
+    reply[n] = '\0';
+    printf("Server reply: %s\n", reply);
+
+    if(strcmp(reply, "(CC)") != 0) {
+        printf("Server reply is not valid\n");
+        closesocket(sock);
+        WSACleanup();
+        return 1;
+    }
+    printf("unsecured connection established\n");
+
+    closesocket(sock);
+    WSACleanup();
+    printf("Connection closed\n");
+    return 0; 
 }
 
