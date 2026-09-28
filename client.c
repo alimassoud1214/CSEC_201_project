@@ -79,6 +79,16 @@ int main() {
         }
     }
 
+    printf("\nClosing connection...\n");
+    strcpy(packet, "(End)");
+    send(sock, packet, strlen(packet), 0);
+
+    n = recv(sock, reply, sizeof(reply) - 1, 0);
+    if (n > 0) {
+        reply[n] = '\0';
+        printf("Server: %s\n", reply);
+    }
+
     closesocket(sock);
     WSACleanup();
     printf("Connection closed\n");
