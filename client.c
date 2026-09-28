@@ -1,4 +1,4 @@
-#include <studio.h>
+#include <stdio.h>
 #include <string.h>
 #include <winsock2.h>
 
@@ -8,10 +8,11 @@ int main() {
     struct sockaddr_in server;
     char packet[200];
     char reply[5000];
+    char filename[100];
     int n;
 
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        printf("Winslock failed to start\n");
+        printf("Winsock failed to start\n");
         return 1;
     }
 
@@ -23,12 +24,12 @@ int main() {
     }
 
     server.sin_family = AF_INET;
-    server.sin_port = htons(8080);
-    server.sin_addr.s_addr = inet_addr("127.0.0.1);
+    server.sin_port = htons(8888);
+    server.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0) {
         printf("Connection failed\n");
-        printf("make sure the server is running on port 8080\n");
+        printf("make sure the server is running on port 8888\n");
         closesocket(sock);
         WSACleanup();
         return 1;
@@ -36,7 +37,7 @@ int main() {
 
     printf("Connected to RFMP server\n");
 
-    strcpy(packet, "(SS,RFMP, v1.0,0)");
+    strcpy(packet, "(SS,RFMP,v1.0,0)");
     send(sock, packet, strlen(packet), 0);
 
     n = recv(sock, reply, sizeof(reply) -1, 0);
@@ -57,9 +58,29 @@ int main() {
     }
     printf("unsecured connection established\n");
 
+    printf("\nEnter filename to read: ");
+    scanf("%s", filename);
+
+    strcpy(packet, "(CM,openRead,");
+    strcat(packet, filename);
+    strcat(packet, ")");
+    send(sock, packet, strlen(packet), 0);
+
+    n = recv(sock, reply, sizeof(reply) - 1, 0);
+    if (n > 0) {
+        reply[n] = '\0';
+
+        if (strncmp(reply, "(EE", 3) == 0) {
+            printf("\n[ERROR]\n%s\n", reply);
+        } else {
+            printf("\n===== FILE CONTENT =====\n");
+            printf("%s\n", reply);
+            printf("========================\n");
+        }
+    }
+
     closesocket(sock);
     WSACleanup();
     printf("Connection closed\n");
-    return 0; 
+    return 0;
 }
-
