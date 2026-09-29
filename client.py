@@ -1,13 +1,10 @@
 import socket
-
 # SERVER SETTINGS
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8888
-
 # SOCKET FUNCTIONS
 def send_packet(sock, packet):
     sock.sendall(packet.encode("utf-8"))
-
 
 def receive_packet(sock):
     data = sock.recv(4096)
@@ -30,7 +27,6 @@ def handle_response(response):
     else:
         print("\n[SERVER]")
         print(response)
-
 # SETUP PHASE
 def setup_connection(sock):
 
@@ -44,6 +40,7 @@ def setup_connection(sock):
         start_packet = "(SS,RFMP,v1.0,1)"
     else:
         start_packet = "(SS,RFMP,v1.0,0)"
+
     # Send Start Packet
     send_packet(sock, start_packet)
 
@@ -51,23 +48,26 @@ def setup_connection(sock):
     response = receive_packet(sock)
 
     print("\nServer:", response)
+
     # Non-secure connection
     if security != "y":
-
         if response == "(CC)":
             print("Unsecured connection setup complete.")
             return False
 
         print("Unexpected server response.")
         return False
-    
+
     # Secure connection
     if response.startswith("(CC,"):
         print("Server public key received.")
+
         # Extract server public key
         server_public_key = response[4:-1]
 
         print("Server public key:", server_public_key)
+
+        # Encryption will be integrated later
         print("Secure encryption setup still needs to be integrated.")
 
         return True
@@ -86,7 +86,6 @@ def send_command(sock, command):
     handle_response(response)
 # OPEN READ
 def open_read(sock):
-
     filename = input("Enter filename to read: ")
 
     if filename.strip() == "":
@@ -98,6 +97,11 @@ def open_read(sock):
     send_packet(sock, packet)
 
     response = receive_packet(sock)
+    # Check for server error
+    if response.startswith("(EE"):
+        print("\n[ERROR]")
+        print(response)
+        return
 
     print("\n===== FILE CONTENT =====")
     print(response)
@@ -111,7 +115,6 @@ def open_write(sock):
     if filename.strip() == "":
         print("Filename cannot be empty.")
         return
-
     packet = f"(CM,openWrite,{filename})"
 
     send_packet(sock, packet)
@@ -119,6 +122,7 @@ def open_write(sock):
     response = receive_packet(sock)
 
     handle_response(response)
+
     if response.startswith("(SC"):
 
         text = input("Enter text to write: ")
@@ -126,32 +130,33 @@ def open_write(sock):
         data_packet = f"(DP,{text})"
 
         send_packet(sock, data_packet)
-
         response = receive_packet(sock)
-
         handle_response(response)
-
 # MENU
 def show_menu():
-
     print("\n")
     print("========== RFMP CLIENT ==========")
+    # Required RFMP commands
     print("1. mkdir")
     print("2. cd")
     print("3. rmdir")
     print("4. del")
     print("5. ren")
-    print("6. ls")
-    print("7. pwd")
-    print("8. whoami")
+    # Additional Windows system commands
+    print("6. dir")
+    print("7. whoami")
+    print("8. hostname")
     print("9. date")
-    print("10. uname")
+    print("10. systeminfo")
+    # File operations
     print("11. openRead")
     print("12. openWrite")
+    # Custom command
     print("13. Custom system command")
+    # Exit
     print("14. Exit")
-    print("=================================")
 
+    print("=================================")
 # MAIN PROGRAM
 def main():
     # Create TCP socket
@@ -170,7 +175,6 @@ def main():
 
         # SETUP PHASE
         secure = setup_connection(client_socket)
-
         # OPERATION PHASE
         while True:
 
@@ -223,26 +227,26 @@ def main():
                     client_socket,
                     f"ren {old_name} {new_name}"
                 )
-            # ls
+            # dir
             elif choice == "6":
 
                 send_command(
                     client_socket,
-                    "ls"
+                    "dir"
                 )
-            # pwd
+            # whoami
             elif choice == "7":
 
                 send_command(
                     client_socket,
-                    "pwd"
+                    "whoami"
                 )
-            # whoami
+            # hostname
             elif choice == "8":
 
                 send_command(
                     client_socket,
-                    "whoami"
+                    "hostname"
                 )
             # date
             elif choice == "9":
@@ -251,12 +255,12 @@ def main():
                     client_socket,
                     "date"
                 )
-            # uname
+            # systeminfo
             elif choice == "10":
 
                 send_command(
                     client_socket,
-                    "uname"
+                    "systeminfo"
                 )
             # openRead
             elif choice == "11":
@@ -276,33 +280,34 @@ def main():
                 if command.strip() == "":
                     print("Command cannot be empty.")
                     continue
-            
+
                 send_command(
                     client_socket,
                     command
                 )
             # Exit
             elif choice == "14":
+
                 print("\nClosing connection...")
 
                 send_packet(
                     client_socket,
                     "(End)"
                 )
+
                 response = receive_packet(
                     client_socket
                 )
+
                 if response:
                     print("Server:", response)
 
                 break
 
             else:
-
                 print("\nInvalid option.")
 
     except ConnectionRefusedError:
-
         print("\nCould not connect to the server.")
         print("Make sure the server is running on port 8888.")
 
@@ -315,7 +320,7 @@ def main():
 
     finally:
         client_socket.close()
-
+        
         print("Client closed.")
 # START PROGRAM
 if __name__ == "__main__":
