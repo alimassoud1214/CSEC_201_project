@@ -63,9 +63,17 @@ def handle_client(clientsocket, addr):
             # Strip (CM,prompt,...) or (CM,action,...) envelope sent by client
             if msg.startswith("(CM,"):
                 msg = msg[4:-1]
-                if "," in msg:
-                    parts = msg.split(",", 1)
-                    msg = parts[1]
+                parts=msg.split(",",1)
+
+            if len(parts) ==2:
+                command_type=parts[0]
+                arguments=parts[1]
+
+                if command_type.lower() in ["openread","openwrite"]:
+                    msg=command_type + " " +arguments
+                else:
+                    msg=arguments
+
 
             # Closing phase
             if msg == "(End)" or msg == "exit" or msg == "close" or msg == "quit":
