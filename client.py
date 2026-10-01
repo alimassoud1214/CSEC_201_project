@@ -97,14 +97,21 @@ def open_read(sock):
     send_packet(sock, packet)
 
     response = receive_packet(sock)
+
     # Check for server error
     if response.startswith("(EE"):
         print("\n[ERROR]")
         print(response)
         return
 
+    # The server sends file contents as (DP,file contents)
+    if response.startswith("(DP,") and response.endswith(")"):
+        content = response[4:-1]
+    else:
+        content = response
+
     print("\n===== FILE CONTENT =====")
-    print(response)
+    print(content)
     print("=========================")
 # OPEN WRITE
 def open_write(sock):
