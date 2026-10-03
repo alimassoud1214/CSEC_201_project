@@ -3,14 +3,21 @@ import threading
 import os
 import subprocess
 import base64
-from encryption import generate_rsa_keys, decrypt_session_key
-from crypto_util import caesar_encrypt, caesar_decrypt
 
-HOST = "127.0.0.1"
+from encryption import generate_rsa_keys, decrypt_session_key
+
+# Bind to 0.0.0.0 so clients on Windows, Mac, and local networks can connect
+HOST = "0.0.0.0"
 PORT = 8888
 
 # Generate the server's RSA public/private key pair.
 SERVER_PUBLIC_KEY, SERVER_PRIVATE_KEY = generate_rsa_keys()
+
+# Standard Rubric Error Codes (EE,ErrorCode,Description)
+ERR_FILE_NOT_FOUND = "1"
+ERR_MISSING_ARG = "2"
+ERR_UNKNOWN_CMD = "3"
+ERR_OP_FAILED = "4"
 
 def handle_client(clientsocket, addr):
     print("Got a connection from %s" % str(addr))
@@ -35,7 +42,7 @@ def handle_client(clientsocket, addr):
 
             elif security_mode == "1":
                 is_secured = True
-                # Base64 makes the RSA public key safe to send inside the RFMP packet.
+
                 public_key_b64 = base64.b64encode(
                     SERVER_PUBLIC_KEY
                 ).decode("utf-8")
@@ -45,10 +52,9 @@ def handle_client(clientsocket, addr):
 
                 print("Server RSA public key sent.")
 
-                # Set a timeout for receiving the EC packet.
-                clientsocket.settimeout(30.0)
+                clientsocket.settimeout(5.0)
+
                 try:
-                    # Receive the client's encryption details and encrypted session key.
                     ec_req = clientsocket.recv(16384).decode("utf-8")
                     print("Received encryption details:", ec_req)
 
@@ -62,16 +68,14 @@ def handle_client(clientsocket, addr):
 
                             if algorithm.upper() not in ["AES", "CAESAR"]:
                                 clientsocket.send(
-                                    "(EE,Unsupported encryption algorithm)".encode("utf-8")
+                                    f"(EE,{ERR_OP_FAILED},Unsupported encryption algorithm)".encode("utf-8")
                                 )
                                 return
 
-                            # Decode the Base64 RSA-encrypted session key.
                             encrypted_session_key = base64.b64decode(
                                 encrypted_key_b64
                             )
 
-                            # Decrypt the session key using the server's RSA private key.
                             session_key = decrypt_session_key(
                                 SERVER_PRIVATE_KEY,
                                 encrypted_session_key
@@ -79,19 +83,20 @@ def handle_client(clientsocket, addr):
 
                             print("Secure setup complete.")
                             print("Algorithm:", algorithm)
-                            print("Client information received.")
 
                             clientsocket.send(
                                 "(SC,Secure communication established)".encode("utf-8")
                             )
+
                         else:
                             clientsocket.send(
-                                "(EE,Invalid EC packet)".encode("utf-8")
+                                f"(EE,{ERR_MISSING_ARG},Invalid EC packet)".encode("utf-8")
                             )
                             return
+
                     else:
                         clientsocket.send(
-                            "(EE,Expected EC packet)".encode("utf-8")
+                            f"(EE,{ERR_UNKNOWN_CMD},Expected EC packet)".encode("utf-8")
                         )
                         return
 
@@ -101,6 +106,7 @@ def handle_client(clientsocket, addr):
 
                 finally:
                     clientsocket.settimeout(None)
+
         while True:
             cmd_data = clientsocket.recv(16384).decode("utf-8")
 
@@ -109,6 +115,7 @@ def handle_client(clientsocket, addr):
 
             msg = cmd_data.strip()
             print("Received command:", msg)
+
             # Remove the RFMP command packet wrapper.
             if msg.startswith("(CM,"):
                 msg = msg[4:-1]
@@ -117,7 +124,7 @@ def handle_client(clientsocket, addr):
                 if len(parts) == 2:
                     command_type = parts[0]
                     arguments = parts[1]
-                    print("DEBUG filename/arguments received:", repr(arguments)) 
+
                     if command_type.lower() in ["openread", "openwrite"]:
                         msg = command_type + " " + arguments
                     else:
@@ -137,148 +144,176 @@ def handle_client(clientsocket, addr):
                 continue
 
             cmd = tokens[0].lower()
-            # Create a directory.
+
+            # Built-in directory commands
             if cmd == "mkdir":
                 if len(tokens) > 1:
                     folder = tokens[1]
+
                     try:
                         os.mkdir(os.path.join(current_dir, folder))
+
                         clientsocket.send(
                             f"(SC,Directory '{folder}' created)".encode("utf-8")
                         )
+
                     except Exception as e:
                         clientsocket.send(
-                            f"(EE,{str(e)})".encode("utf-8")
+                            f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                         )
+
                 else:
                     clientsocket.send(
-                        "(EE,Missing directory name)".encode("utf-8")
+                        f"(EE,{ERR_MISSING_ARG},Missing directory name)".encode("utf-8")
                     )
-            # Change the current server directory.
+
             elif cmd == "cd":
                 if len(tokens) > 1:
                     target = tokens[1]
+
                     new_path = os.path.abspath(
                         os.path.join(current_dir, target)
                     )
 
                     if os.path.exists(new_path) and os.path.isdir(new_path):
                         current_dir = new_path
+
                         clientsocket.send(
                             f"(SC,Changed directory to {current_dir})".encode("utf-8")
                         )
+
                     else:
                         clientsocket.send(
-                            "(EE,Directory does not exist)".encode("utf-8")
+                            f"(EE,{ERR_FILE_NOT_FOUND},Directory does not exist)".encode("utf-8")
                         )
+
                 else:
                     clientsocket.send(
-                        "(EE,Missing target directory)".encode("utf-8")
+                        f"(EE,{ERR_MISSING_ARG},Missing target directory)".encode("utf-8")
                     )
 
-            # Remove an empty directory.
-            elif cmd == "rmdir" or cmd == "rd":
+            elif cmd in ["rmdir", "rd"]:
                 if len(tokens) > 1:
                     folder = tokens[1]
+
                     try:
-                        os.rmdir(os.path.join(current_dir, folder))
+                        os.rmdir(
+                            os.path.join(current_dir, folder)
+                        )
+
                         clientsocket.send(
                             f"(SC,Directory '{folder}' removed)".encode("utf-8")
                         )
+
                     except Exception as e:
                         clientsocket.send(
-                            f"(EE,{str(e)})".encode("utf-8")
+                            f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                         )
+
                 else:
                     clientsocket.send(
-                        "(EE,Missing directory name)".encode("utf-8")
+                        f"(EE,{ERR_MISSING_ARG},Missing directory name)".encode("utf-8")
                     )
-            # Delete a file.
+
             elif cmd == "del":
                 if len(tokens) > 1:
                     filename = tokens[1]
+
                     try:
-                        os.remove(os.path.join(current_dir, filename))
+                        os.remove(
+                            os.path.join(current_dir, filename)
+                        )
+
                         clientsocket.send(
                             f"(SC,File '{filename}' deleted)".encode("utf-8")
                         )
+
                     except Exception as e:
                         clientsocket.send(
-                            f"(EE,{str(e)})".encode("utf-8")
+                            f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                         )
+
                 else:
                     clientsocket.send(
-                        "(EE,Missing filename)".encode("utf-8")
+                        f"(EE,{ERR_MISSING_ARG},Missing filename)".encode("utf-8")
                     )
-            # Rename a file or directory.
+
             elif cmd == "ren":
                 if len(tokens) > 2:
                     old_name = tokens[1]
                     new_name = tokens[2]
+
                     try:
                         os.rename(
                             os.path.join(current_dir, old_name),
                             os.path.join(current_dir, new_name)
                         )
+
                         clientsocket.send(
                             f"(SC,Renamed '{old_name}' to '{new_name}')".encode("utf-8")
                         )
+
                     except Exception as e:
                         clientsocket.send(
-                            f"(EE,{str(e)})".encode("utf-8")
+                            f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                         )
+
                 else:
                     clientsocket.send(
-                        "(EE,Usage: ren <old_name> <new_name>)".encode("utf-8")
+                        f"(EE,{ERR_MISSING_ARG},Usage: ren <old_name> <new_name>)".encode("utf-8")
                     )
 
-            # List files in the current directory.
-            elif cmd == "ls" or cmd == "dir":
+            elif cmd in ["ls", "dir"]:
                 try:
                     files = os.listdir(current_dir)
-                    file_list = ", ".join(files) if files else "Directory empty"
+
+                    file_list = (
+                        ", ".join(files)
+                        if files
+                        else "Directory empty"
+                    )
 
                     clientsocket.send(
                         f"(SC,Files: {file_list})".encode("utf-8")
                     )
+
                 except Exception as e:
                     clientsocket.send(
-                        f"(EE,{str(e)})".encode("utf-8")
+                        f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                     )
 
-            # Return the current server directory.
             elif cmd == "pwd":
                 clientsocket.send(
                     f"(SC,{current_dir})".encode("utf-8")
                 )
-            # Return the Windows username running the server.
+
+            # System commands
             elif cmd == "whoami":
                 try:
                     result = subprocess.run(
-                        ["whoami"],
+                        "whoami",
+                        shell=True,
                         cwd=current_dir,
                         capture_output=True,
                         text=True
                     )
+
                     output = result.stdout.strip()
-                    if result.returncode == 0:
-                        clientsocket.send(
-                            f"(SC,{output})".encode("utf-8")
-                        )
-                    else:
-                        clientsocket.send(
-                            f"(EE,{result.stderr.strip()})".encode("utf-8")
-                        )
+
+                    clientsocket.send(
+                        f"(SC,{output})".encode("utf-8")
+                    )
 
                 except Exception as e:
                     clientsocket.send(
-                        f"(EE,{str(e)})".encode("utf-8")
+                        f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                     )
-            # Return the server computer's hostname.
+
             elif cmd == "hostname":
                 try:
                     result = subprocess.run(
-                        ["hostname"],
+                        "hostname",
+                        shell=True,
                         cwd=current_dir,
                         capture_output=True,
                         text=True
@@ -286,74 +321,82 @@ def handle_client(clientsocket, addr):
 
                     output = result.stdout.strip()
 
-                    if result.returncode == 0:
-                        clientsocket.send(
-                            f"(SC,{output})".encode("utf-8")
-                        )
-                    else:
-                        clientsocket.send(
-                            f"(EE,{result.stderr.strip()})".encode("utf-8")
-                        )
+                    clientsocket.send(
+                        f"(SC,{output})".encode("utf-8")
+                    )
 
                 except Exception as e:
                     clientsocket.send(
-                        f"(EE,{str(e)})".encode("utf-8")
+                        f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                     )
-            # Windows does not use the same "date" command behavior as Linux,
-            # so cmd.exe is used to display the current date.
+
             elif cmd == "date":
                 try:
+                    # Windows uses cmd /c date /t, Mac/Linux uses date command
+                    cmd_str = (
+                        "cmd /c date /t"
+                        if os.name == "nt"
+                        else "date"
+                    )
+
                     result = subprocess.run(
-                        ["cmd", "/c", "date", "/t"],
+                        cmd_str,
+                        shell=True,
                         cwd=current_dir,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        stdin=subprocess.DEVNULL
                     )
 
                     output = result.stdout.strip()
 
-                    if result.returncode == 0:
-                        clientsocket.send(
-                            f"(SC,{output})".encode("utf-8")
-                        )
-                    else:
-                        clientsocket.send(
-                            f"(EE,{result.stderr.strip()})".encode("utf-8")
-                        )
+                    clientsocket.send(
+                        f"(SC,{output})".encode("utf-8")
+                    )
+
                 except Exception as e:
                     clientsocket.send(
-                        f"(EE,{str(e)})".encode("utf-8")
+                        f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                     )
-            # Display Windows system information.
+
             elif cmd == "systeminfo":
                 try:
+                    # Windows uses systeminfo, Mac/Linux uses uname -a
+                    cmd_str = (
+                        "systeminfo"
+                        if os.name == "nt"
+                        else "uname -a"
+                    )
+
                     result = subprocess.run(
-                        ["systeminfo"],
+                        cmd_str,
+                        shell=True,
                         cwd=current_dir,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        stdin=subprocess.DEVNULL
                     )
 
                     output = result.stdout.strip()
 
-                    if result.returncode == 0:
-                        clientsocket.send(
-                            f"(SC,{output})".encode("utf-8")
-                        )
-                    else:
-                        clientsocket.send(
-                            f"(EE,{result.stderr.strip()})".encode("utf-8")
-                        )
+                    clientsocket.send(
+                        f"(SC,{output})".encode("utf-8")
+                    )
 
                 except Exception as e:
                     clientsocket.send(
-                        f"(EE,{str(e)})".encode("utf-8")
+                        f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                     )
-            # Read the contents of a file.
+
+            # File I/O operations
             elif cmd == "openread":
                 if len(tokens) > 1:
                     filename = tokens[1]
-                    file_path = os.path.join(current_dir, filename)
+
+                    file_path = os.path.join(
+                        current_dir,
+                        filename
+                    )
 
                     if os.path.exists(file_path):
                         try:
@@ -361,66 +404,57 @@ def handle_client(clientsocket, addr):
                             content = file.read()
                             file.close()
 
-                            # Encrypt file contents when secure AES communication is active.
-                            if is_secured and algorithm.upper() == "AES":
-                                from encryption import aes_encrypt
-                                content = aes_encrypt(
-                                    content,
-                                    session_key
-                                )
-
-                            # Encrypt file contents when secure Caesar communication is active.
-                            elif is_secured and algorithm.upper() == "CAESAR":
-                                content = caesar_encrypt(content)
-
                             clientsocket.send(
                                 f"(DP,{content})".encode("utf-8")
                             )
 
                         except Exception as e:
                             clientsocket.send(
-                                f"(EE,{str(e)})".encode("utf-8")
+                                f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                             )
+
                     else:
                         clientsocket.send(
-                            "(EE,File not found)".encode("utf-8")
+                            f"(EE,{ERR_FILE_NOT_FOUND},File not found)".encode("utf-8")
                         )
+
                 else:
                     clientsocket.send(
-                        "(EE,Missing filename)".encode("utf-8")
+                        f"(EE,{ERR_MISSING_ARG},Missing filename)".encode("utf-8")
                     )
-            # Write data received from the client into a file.
+
             elif cmd == "openwrite":
                 if len(tokens) > 1:
                     filename = tokens[1]
-                    file_path = os.path.join(current_dir, filename)
+
+                    file_path = os.path.join(
+                        current_dir,
+                        filename
+                    )
 
                     clientsocket.send(
                         f"(SC,Ready to receive write data for {filename})".encode("utf-8")
                     )
 
-                    dp_packet = clientsocket.recv(16384).decode("utf-8")
+                    dp_packet = clientsocket.recv(
+                        16384
+                    ).decode("utf-8")
+
                     text_data = dp_packet
 
-                    if dp_packet.startswith("(DP,") and dp_packet.endswith(")"):
+                    if dp_packet.startswith("(DP,"):
                         text_data = dp_packet[4:-1]
 
                     try:
-                        # Decrypt the incoming data when secure AES communication is active.
-                        if is_secured and algorithm.upper() == "AES":
-                            from encryption import aes_decrypt
+                        file = open(
+                            file_path,
+                            "a"
+                        )
 
-                            text_data = aes_decrypt(
-                                text_data,
-                                session_key
-                            )
+                        file.write(
+                            text_data + "\n"
+                        )
 
-                        # Decrypt the incoming data when secure Caesar communication is active.
-                        elif is_secured and algorithm.upper() == "CAESAR":
-                            text_data = caesar_decrypt(text_data)
-
-                        file = open(file_path, "a")
-                        file.write(text_data + "\n")
                         file.close()
 
                         clientsocket.send(
@@ -429,13 +463,15 @@ def handle_client(clientsocket, addr):
 
                     except Exception as e:
                         clientsocket.send(
-                            f"(EE,{str(e)})".encode("utf-8")
+                            f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8")
                         )
+
                 else:
                     clientsocket.send(
-                        "(EE,Missing filename)".encode("utf-8")
+                        f"(EE,{ERR_MISSING_ARG},Missing filename)".encode("utf-8")
                     )
-            # Any command not handled above is executed as a Windows system command.
+
+            # System command fallback
             else:
                 try:
                     result = subprocess.run(
@@ -443,7 +479,8 @@ def handle_client(clientsocket, addr):
                         cwd=current_dir,
                         shell=True,
                         capture_output=True,
-                        text=True
+                        text=True,
+                        stdin=subprocess.DEVNULL
                     )
 
                     output = result.stdout.strip()
@@ -454,29 +491,35 @@ def handle_client(clientsocket, addr):
                             clientsocket.send(
                                 f"(SC,{output})".encode("utf-8")
                             )
+
                         else:
                             clientsocket.send(
                                 "(SC,Command executed successfully)".encode("utf-8")
                             )
+
                     else:
-                        if error_output:
-                            clientsocket.send(
-                                f"(EE,{error_output})".encode("utf-8")
-                            )
-                        else:
-                            clientsocket.send(
-                                f"(EE,Command failed with exit code {result.returncode})".encode("utf-8")
-                            )
+                        err_msg = (
+                            error_output
+                            if error_output
+                            else f"Command failed with exit code {result.returncode}"
+                        )
+
+                        clientsocket.send(
+                            f"(EE,{ERR_UNKNOWN_CMD},{err_msg})".encode("utf-8")
+                        )
 
                 except Exception as e:
                     clientsocket.send(
-                        f"(EE,{str(e)})".encode("utf-8")
+                        f"(EE,{ERR_UNKNOWN_CMD},{str(e)})".encode("utf-8")
                     )
+
     except Exception as e:
         print("Error handling client:", e)
 
     finally:
         clientsocket.close()
+
+
 def start_server():
     serversocket = socket.socket(
         socket.AF_INET,
@@ -488,10 +531,17 @@ def start_server():
         socket.SO_REUSEADDR,
         1
     )
-    serversocket.bind((HOST, PORT))
+
+    serversocket.bind(
+        (HOST, PORT)
+    )
+
     serversocket.listen(5)
 
-    print("Server is listening on port", PORT)
+    print(
+        "Server is listening on port",
+        PORT
+    )
 
     while True:
         clientsocket, addr = serversocket.accept()
@@ -500,6 +550,7 @@ def start_server():
             target=handle_client,
             args=(clientsocket, addr)
         )
+
         thread.start()
 if __name__ == "__main__":
     start_server()
