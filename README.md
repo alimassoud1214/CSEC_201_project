@@ -1,8 +1,8 @@
 # CSEC 201 - Remote File Management Protocol (RFMP)
 
 ## Group Members
-- Ali
+- Ali Massoud
 - Muhammad Adel
-- Eyosias
-- Sergei
+- Eyosias Samuel Gebremariam
+- Sergei Astionov
 
