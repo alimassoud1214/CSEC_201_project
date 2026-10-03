@@ -1,5 +1,19 @@
 import socket
-# SERVER SETTINGS
+import base64
+
+from encryption import (
+    generate_rsa_keys,
+    generate_session_key,
+    encrypt_session_key,
+    aes_encrypt,
+    aes_decrypt
+)
+
+from crypto_util import (
+    caesar_encrypt,
+    caesar_decrypt
+)
+
 SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 8888
 # SOCKET FUNCTIONS
@@ -13,7 +27,6 @@ def receive_packet(sock):
         return ""
 
     return data.decode("utf-8")
-
 # RESPONSE HANDLING
 def handle_response(response):
     if response.startswith("(SC"):
@@ -29,52 +42,114 @@ def handle_response(response):
         print(response)
 # SETUP PHASE
 def setup_connection(sock):
-
     print("\n===== RFMP SETUP =====")
 
-    security = input(
-        "Use secure communication? (y/n): "
-    ).lower()
+    secure_choice = input("Use secure communication? (y/n): ").strip().lower()
+    # UNSECURED CONNECTION
+    if secure_choice == "n":
+        send_packet(sock, "(SS,RFMP,v1.0,0)")
 
-    if security == "y":
-        start_packet = "(SS,RFMP,v1.0,1)"
-    else:
-        start_packet = "(SS,RFMP,v1.0,0)"
+        response = receive_packet(sock)
+        print("\nServer:", response)
 
-    # Send Start Packet
-    send_packet(sock, start_packet)
-
-    # Receive Confirm Connection Packet
-    response = receive_packet(sock)
-
-    print("\nServer:", response)
-
-    # Non-secure connection
-    if security != "y":
         if response == "(CC)":
             print("Unsecured connection setup complete.")
-            return False
+            return {
+                "secure": False,
+                "algorithm": None,
+                "session_key": None
+            }
 
-        print("Unexpected server response.")
-        return False
+        print("Setup failed.")
+        return None
+    # SECURED CONNECTION
+    if secure_choice == "y":
 
-    # Secure connection
-    if response.startswith("(CC,"):
+        algorithm = input(
+            "Choose encryption algorithm (AES/Caesar): "
+        ).strip().upper()
+
+        if algorithm not in ["AES", "CAESAR"]:
+            print("Invalid encryption algorithm.")
+            return None
+
+        # Step 1: Tell server that secure communication is requested
+        send_packet(sock, "(SS,RFMP,v1.0,1)")
+
+        # Step 2: Receive server's public RSA key
+        response = receive_packet(sock)
+        print("\nServer:", response)
+
+        if not response.startswith("(CC,") or not response.endswith(")"):
+            print("Invalid secure setup response from server.")
+            return None
+
+        server_public_key_b64 = response[4:-1]
+        try:
+            server_public_key = base64.b64decode(
+                server_public_key_b64
+            )
+        except Exception:
+            print("Invalid server public key received.")
+            return None
+
         print("Server public key received.")
+        # Step 3: Generate client's RSA key pair
+        client_public_key, client_private_key = generate_rsa_keys()
 
-        # Extract server public key
-        server_public_key = response[4:-1]
+        # Step 4: Generate session key
+        session_key = generate_session_key()
 
-        print("Server public key:", server_public_key)
+        # Step 5: Encrypt session key using server's RSA public key
+        encrypted_session_key = encrypt_session_key(
+            server_public_key,
+            session_key
+        )
+        # Step 6: Base64 encode binary values for RFMP packet
+        encrypted_session_key_b64 = base64.b64encode(
+            encrypted_session_key
+        ).decode("utf-8")
 
-        # Encryption will be integrated later
-        print("Secure encryption setup still needs to be integrated.")
+        client_public_key_b64 = base64.b64encode(
+            client_public_key
+        ).decode("utf-8")
+        # Step 7: Ask for username
+        username = input("Username: ").strip()
 
-        return True
+        # Step 8: Send EC packet
+        ec_packet = (
+            "(EC,"
+            + algorithm
+            + ","
+            + encrypted_session_key_b64
+            + ","
+            + username
+            + ":"
+            + client_public_key_b64
+            + ")"
+        )
 
-    print("Unexpected server response.")
-    return False
+        send_packet(sock, ec_packet)
 
+        # Step 9: Wait for server confirmation
+        response = receive_packet(sock)
+        print("\nServer:", response)
+
+        if response.startswith("(SC"):
+            print("Secure connection setup complete.")
+
+            return {
+                "secure": True,
+                "algorithm": algorithm,
+                "session_key": session_key,
+                "client_private_key": client_private_key
+            }
+
+        print("Secure connection setup failed.")
+        return None
+
+    print("Invalid choice. Please enter y or n.")
+    return None
 # NORMAL COMMANDS
 def send_command(sock, command):
     packet = f"(CM,prompt,{command})"
@@ -97,21 +172,14 @@ def open_read(sock):
     send_packet(sock, packet)
 
     response = receive_packet(sock)
-
     # Check for server error
     if response.startswith("(EE"):
         print("\n[ERROR]")
         print(response)
         return
 
-    # The server sends file contents as (DP,file contents)
-    if response.startswith("(DP,") and response.endswith(")"):
-        content = response[4:-1]
-    else:
-        content = response
-
     print("\n===== FILE CONTENT =====")
-    print(content)
+    print(response)
     print("=========================")
 # OPEN WRITE
 def open_write(sock):

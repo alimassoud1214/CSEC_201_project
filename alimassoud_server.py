@@ -137,7 +137,7 @@ def handle_client(clientsocket, addr):
 
             cmd = tokens[0].lower()
 
-            # --- BUILT-IN DIRECTORY COMMANDS ---
+            # Built-in directory commands
             if cmd == "mkdir":
                 if len(tokens) > 1:
                     folder = tokens[1]
@@ -311,7 +311,7 @@ def handle_client(clientsocket, addr):
                 except Exception as e:
                     clientsocket.send(f"(EE,{ERR_OP_FAILED},{str(e)})".encode("utf-8"))
 
-            # --- FILE I/O OPERATIONS ---
+            # File I/O operations
             elif cmd == "openread":
                 if len(tokens) > 1:
                     filename = tokens[1]
@@ -371,7 +371,7 @@ def handle_client(clientsocket, addr):
                         f"(EE,{ERR_MISSING_ARG},Missing filename)".encode("utf-8")
                     )
 
-            # --- CUSTOM SYSTEM COMMAND FALLBACK (echo, uname, etc.) ---
+            # System command fallback
             else:
                 try:
                     result = subprocess.run(
