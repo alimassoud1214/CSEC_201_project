@@ -241,7 +241,7 @@ def open_write(sock, secure):
         print("Filename cannot be empty.")
         return
 
-    packet = f"(CM,openWrite,{filename}"
+    packet = f"(CM,openWrite,{filename})"
     send_packet(sock, packet)
 
     response = receive_packet(sock)
